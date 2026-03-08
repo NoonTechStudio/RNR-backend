@@ -1,0 +1,47 @@
+{
+  "name": "rest-and-relax-backend-staging",
+  "version": "1.0.0",
+  "description": "",
+  "main": "server.js",
+  "type": "module",
+  "scripts": {
+    "start": "node server.js",
+    "dev": "nodemon server.js",
+    "build": "echo 'No build step required for Node.js'",
+    "test": "echo \"Error: no test specified\" && exit 1",
+    "vercel-build": "echo 'Building for Vercel'"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/z5a4/rest-and-relax-backend-staging.git"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "bugs": {
+    "url": "https://github.com/z5a4/rest-and-relax-backend-staging/issues"
+  },
+  "homepage": "https://github.com/z5a4/rest-and-relax-backend-staging#readme",
+  "dependencies": {
+    "axios": "^1.13.4",
+    "bcryptjs": "^3.0.3",
+    "body-parser": "^2.2.2",
+    "cloudinary": "^1.41.3",
+    "cors": "^2.8.6",
+    "dotenv": "^17.2.4",
+    "express": "^4.21.2",
+    "express-rate-limit": "^8.2.1",
+    "express-validator": "^7.3.1",
+    "helmet": "^8.1.0",
+    "jsonwebtoken": "^9.0.3",
+    "mongoose": "^8.18.3",
+    "multer": "^2.0.2",
+    "multer-storage-cloudinary": "^4.0.0",
+    "nodemailer": "^8.0.1",
+    "nodemon": "^3.1.11",
+    "pdfkit": "^0.17.2",
+    "razorpay": "^2.9.6",
+    "sharp": "^0.34.5",
+    "twilio": "^5.12.1"
+  }
+}
