@@ -343,9 +343,13 @@ export const createBooking = async (req, res) => {
         let sessionToUse = 'Full Day';
         const sessionConfig = poolParty.timings.find(t => t.session === sessionToUse);
         if (sessionConfig) {
-          let poolPartyDays = effectiveDays;
-          if (!sameDayCheckout) {
-            poolPartyDays = Math.max(0, effectiveDays - 1);
+          let poolPartyDays;
+          if (sameDayCheckout) {
+          // Day‑picnic: pool party only on the single day
+          poolPartyDays = 1;
+          } else {
+          // Night stay: pool party for every night (i from 0 to totalDays-1)
+          poolPartyDays = effectiveNights;   // totalDays is the number of nights
           }
           for (let i = 0; i < poolPartyDays; i++) {
             const currentDate = new Date(startDate);
