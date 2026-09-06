@@ -1,5 +1,22 @@
 import Review from "../models/Review.js";
 import Location from "../models/Location.js";
+import cloudinary from "../config/Cloudinary.js";
+
+// Helper to stream upload files to Cloudinary
+const uploadFileToCloudinary = (fileBuffer, folder = 'reviews', resourceType = 'auto') => {
+  return new Promise((resolve, reject) => {
+    cloudinary.uploader.upload_stream(
+      {
+        folder,
+        resource_type: resourceType,
+      },
+      (error, result) => {
+        if (error) reject(error);
+        else resolve(result);
+      }
+    ).end(fileBuffer);
+  });
+};
 
 // Create a new review
 export const createReview = async (req, res) => {
@@ -12,7 +29,8 @@ export const createReview = async (req, res) => {
       title,
       reviewText,
       stayDate,
-      wouldRecommend
+      wouldRecommend,
+      youtubeUrl
     } = req.body;
 
     // Validate required fields
@@ -28,8 +46,9 @@ export const createReview = async (req, res) => {
       return res.status(404).json({ error: "Location not found" });
     }
 
+    const numRating = Number(rating);
     // Validate rating range
-    if (rating < 1 || rating > 5) {
+    if (numRating < 1 || numRating > 5) {
       return res.status(400).json({ error: "Rating must be between 1 and 5" });
     }
 
@@ -40,16 +59,42 @@ export const createReview = async (req, res) => {
       return res.status(400).json({ error: "Stay date cannot be in the future" });
     }
 
+    // Handle image file uploads
+    let uploadedImages = [];
+    if (req.files?.images && req.files.images.length > 0) {
+      for (const imgFile of req.files.images) {
+        const result = await uploadFileToCloudinary(imgFile.buffer, 'reviews/images', 'image');
+        uploadedImages.push({
+          url: result.secure_url,
+          public_id: result.public_id
+        });
+      }
+    }
+
+    // Handle video file upload
+    let uploadedVideo = undefined;
+    if (req.files?.video && req.files.video.length > 0) {
+      const vidFile = req.files.video[0];
+      const result = await uploadFileToCloudinary(vidFile.buffer, 'reviews/videos', 'video');
+      uploadedVideo = {
+        url: result.secure_url,
+        public_id: result.public_id
+      };
+    }
+
     // Create new review
     const review = new Review({
       location,
       guestName: guestName.trim(),
       email: email ? email.trim().toLowerCase() : undefined,
-      rating,
+      rating: numRating,
       title: title.trim(),
       reviewText: reviewText.trim(),
       stayDate: stayDateObj,
-      wouldRecommend: wouldRecommend !== undefined ? wouldRecommend : true
+      wouldRecommend: wouldRecommend === 'true' || wouldRecommend === true,
+      images: uploadedImages,
+      video: uploadedVideo,
+      youtubeUrl: youtubeUrl ? youtubeUrl.trim() : undefined
     });
 
     const savedReview = await review.save();
@@ -292,16 +337,52 @@ export const getReviewsByLocation = async (req, res) => {
 export const updateReview = async (req, res) => {
   try {
     const { id } = req.params;
-    const updates = req.body;
+    const existingReview = await Review.findById(id);
 
-    // Remove fields that shouldn't be updated
+    if (!existingReview) {
+      return res.status(404).json({ error: "Review not found" });
+    }
+
+    const updates = { ...req.body };
+
+    // Remove protected fields
     delete updates._id;
     delete updates.location;
     delete updates.createdAt;
 
+    // Handle new image uploads if present
+    let uploadedImages = existingReview.images || [];
+    if (req.files?.images && req.files.images.length > 0) {
+      for (const imgFile of req.files.images) {
+        const result = await uploadFileToCloudinary(imgFile.buffer, 'reviews/images', 'image');
+        uploadedImages.push({
+          url: result.secure_url,
+          public_id: result.public_id
+        });
+      }
+    }
+    updates.images = uploadedImages;
+
+    // Handle new video upload if present
+    if (req.files?.video && req.files.video.length > 0) {
+      const vidFile = req.files.video[0];
+      const result = await uploadFileToCloudinary(vidFile.buffer, 'reviews/videos', 'video');
+      updates.video = {
+        url: result.secure_url,
+        public_id: result.public_id
+      };
+    }
+
     // Validate rating if being updated
-    if (updates.rating && (updates.rating < 1 || updates.rating > 5)) {
-      return res.status(400).json({ error: "Rating must be between 1 and 5" });
+    if (updates.rating) {
+      updates.rating = Number(updates.rating);
+      if (updates.rating < 1 || updates.rating > 5) {
+        return res.status(400).json({ error: "Rating must be between 1 and 5" });
+      }
+    }
+
+    if (updates.wouldRecommend !== undefined) {
+      updates.wouldRecommend = updates.wouldRecommend === 'true' || updates.wouldRecommend === true;
     }
 
     // Validate stay date if being updated
@@ -319,16 +400,13 @@ export const updateReview = async (req, res) => {
     if (updates.email) updates.email = updates.email.trim().toLowerCase();
     if (updates.title) updates.title = updates.title.trim();
     if (updates.reviewText) updates.reviewText = updates.reviewText.trim();
+    if (updates.youtubeUrl !== undefined) updates.youtubeUrl = updates.youtubeUrl.trim();
 
     const review = await Review.findByIdAndUpdate(
       id,
       updates,
       { new: true, runValidators: true }
     ).populate('location', 'name');
-
-    if (!review) {
-      return res.status(404).json({ error: "Review not found" });
-    }
 
     res.json({
       message: "Review updated successfully",

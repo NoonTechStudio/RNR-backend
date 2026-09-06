@@ -39,6 +39,18 @@ const ReviewSchema = new mongoose.Schema({
   wouldRecommend: {
     type: Boolean,
     default: true
+  },
+  images: [{
+    url: { type: String },
+    public_id: { type: String }
+  }],
+  video: {
+    url: { type: String },
+    public_id: { type: String }
+  },
+  youtubeUrl: {
+    type: String,
+    trim: true
   }
 }, {
   timestamps: true
