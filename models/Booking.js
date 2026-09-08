@@ -84,7 +84,14 @@ const BookingSchema = new mongoose.Schema({
     // Calculated prices
     accommodationPrice: { type: Number, default: 0 },
     foodPackagePrice: { type: Number, default: 0 },
-    totalPrice: { type: Number, required: true },
+
+    // Discount coupon (snapshot – stays fixed even if the coupon is later changed)
+    subtotal: { type: Number, default: 0 },        // price before any coupon discount
+    couponCode: { type: String, default: "" },
+    discountPercent: { type: Number, default: 0 },
+    discountAmount: { type: Number, default: 0 },
+
+    totalPrice: { type: Number, required: true },  // final payable = subtotal - discountAmount
     
     // Duration
     nights: { type: Number, default: 0 },

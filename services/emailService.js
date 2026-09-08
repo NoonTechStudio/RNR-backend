@@ -66,9 +66,12 @@ export const sendBookingConfirmationEmail = async (booking, location, pdfBuffer,
     // FIX: Compute totalPrice from actual payment fields (same logic as PDF)
     const amountPaid = booking.amountPaid || 0;
     const remainingAmount = booking.remainingAmount || 0;
-    const totalPrice = amountPaid + remainingAmount;
+    const totalPrice = amountPaid + remainingAmount;               // final payable (after discount)
+    const discountAmount = booking.pricing?.discountAmount || 0;
+    const discountPercent = booking.pricing?.discountPercent || 0;
+    const couponCode = booking.pricing?.couponCode || '';
     const foodPrice = booking.pricing?.foodPackagePrice || 0;
-    const accommodationPrice = totalPrice - foodPrice;
+    const accommodationPrice = (totalPrice + discountAmount) - foodPrice;
 
     const mailOptions = {
       from: `"Rest & Relax" <${process.env.EMAIL_USER}>`,
@@ -170,6 +173,11 @@ export const sendBookingConfirmationEmail = async (booking, location, pdfBuffer,
                     <div style="text-align:right; color:#1f2937;">${formatCurrency(foodPrice)}</div>
                     ` : ''}
 
+                    ${discountAmount > 0 ? `
+                    <div><span class="label">Discount (${discountPercent}% off${couponCode ? ` - ${couponCode}` : ''}):</span></div>
+                    <div style="text-align:right; color:#059669;">-${formatCurrency(discountAmount)}</div>
+                    ` : ''}
+
                     <div><span class="label">Total Amount:</span></div>
                     <div style="text-align:right; font-weight:600; color:#1f2937;">${formatCurrency(totalPrice)}</div>
 
@@ -249,9 +257,12 @@ export const sendAdminNotification = async (booking, location) => {
     // FIX: Compute totalPrice from actual payment fields (same logic as PDF)
     const amountPaid = booking.amountPaid || 0;
     const remainingAmount = booking.remainingAmount || 0;
-    const totalPrice = amountPaid + remainingAmount;
+    const totalPrice = amountPaid + remainingAmount;               // final payable (after discount)
+    const discountAmount = booking.pricing?.discountAmount || 0;
+    const discountPercent = booking.pricing?.discountPercent || 0;
+    const couponCode = booking.pricing?.couponCode || '';
     const foodPrice = booking.pricing?.foodPackagePrice || 0;
-    const accommodationPrice = totalPrice - foodPrice;
+    const accommodationPrice = (totalPrice + discountAmount) - foodPrice;
 
     const mailOptions = {
       from: process.env.EMAIL_USER,
@@ -317,6 +328,7 @@ export const sendAdminNotification = async (booking, location) => {
                 <table>
                     <tr><td class="label">Accommodation</td><td class="amount" style="text-align:right;">${formatCurrency(accommodationPrice)}</td></tr>
                     ${foodPrice > 0 ? `<tr><td class="label">Food Package</td><td class="amount" style="text-align:right;">${formatCurrency(foodPrice)}</td></tr>` : ''}
+                    ${discountAmount > 0 ? `<tr><td class="label">Discount (${discountPercent}% off${couponCode ? ` - ${couponCode}` : ''})</td><td class="amount" style="text-align:right; color:#059669;">-${formatCurrency(discountAmount)}</td></tr>` : ''}
                     <tr><td class="label">Total Amount</td><td class="amount" style="text-align:right;">${formatCurrency(totalPrice)}</td></tr>
                     <tr><td class="label">Amount Paid</td><td class="paid" style="text-align:right;">${formatCurrency(amountPaid)}</td></tr>
                     <tr><td class="label">Remaining</td><td class="remaining" style="text-align:right;">${formatCurrency(remainingAmount)}</td></tr>
