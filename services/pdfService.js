@@ -229,29 +229,41 @@ y += 15;
 
 const AmountPaid = booking?.amountPaid || 0;
 const RemainingAmount = booking?.remainingAmount || 0;
-const totalPrice = AmountPaid + RemainingAmount;
+const totalPrice = AmountPaid + RemainingAmount;                 // final payable (after discount)
+const discountAmount = booking.pricing?.discountAmount || 0;
+const discountPercent = booking.pricing?.discountPercent || 0;
+const couponCode = booking.pricing?.couponCode || '';
+const subtotalPrice = totalPrice + discountAmount;               // before discount
 const calfoodPrice = booking.pricing?.foodPackagePrice || 0;
-const AccomodationPrice = totalPrice - calfoodPrice; 
+const AccomodationPrice = subtotalPrice - calfoodPrice;
 
 const pricingItems = [
-  { 
-    label: booking.sameDayCheckout ? 'Day Picnic Venue Charges' : 'Accommodation Charges', 
-    value: formatCurrency(AccomodationPrice) 
+  {
+    label: booking.sameDayCheckout ? 'Day Picnic Venue Charges' : 'Accommodation Charges',
+    value: formatCurrency(AccomodationPrice)
   }
 ];
 
 if (booking.pricing?.foodPackagePrice > 0) {
-  pricingItems.push({ 
-    label: 'Food Package Charges', 
-    value: formatCurrency(booking.pricing.foodPackagePrice) 
+  pricingItems.push({
+    label: 'Food Package Charges',
+    value: formatCurrency(booking.pricing.foodPackagePrice)
   });
 }
 
-// Total Line (use totalPrice from booking)
-pricingItems.push({ 
-  label: 'Total Booking Amount', 
-  value: formatCurrency(totalPrice), 
-  isBold: true 
+// Discount line (only when a coupon was applied)
+if (discountAmount > 0) {
+  pricingItems.push({
+    label: `Discount (${discountPercent}% off${couponCode ? ` - ${couponCode}` : ''})`,
+    value: `-${formatCurrency(discountAmount)}`
+  });
+}
+
+// Total Line (final payable after discount)
+pricingItems.push({
+  label: 'Total Booking Amount',
+  value: formatCurrency(totalPrice),
+  isBold: true
 });
 
 // Paid Line

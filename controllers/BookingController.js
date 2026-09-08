@@ -4,6 +4,7 @@ import PoolParty from "../models/poolParty.js";
 import PoolPartyBooking from "../models/PoolPartyBooking.js";
 import Offer from "../models/Offer.js";
 import BookedSlot from "../models/BookedSlot.js";
+import { resolveCouponForBooking } from "../utils/couponUtils.js";
 
 export const createBooking = async (req, res) => {
   try {
@@ -25,7 +26,8 @@ export const createBooking = async (req, res) => {
       amountPaid = 0,
       remainingAmount = 0,
       pricing = {},
-      sameDayCheckout = false
+      sameDayCheckout = false,
+      couponCode = ""
     } = req.body;
 
     console.log('📦 Booking Request Body:', {
@@ -169,7 +171,31 @@ export const createBooking = async (req, res) => {
       }
     }
 
-    const calculatedTotalPrice = accommodationPrice + foodPackagePrice;
+    const subtotalPrice = accommodationPrice + foodPackagePrice;
+
+    // ========== DISCOUNT COUPON ==========
+    // Coupons never stack on top of an active Offer.
+    let couponInfo = null;
+    try {
+      couponInfo = await resolveCouponForBooking({
+        couponCode,
+        subtotal: subtotalPrice,
+        offerActive: !!activeOffer,
+      });
+    } catch (couponErr) {
+      // Release any slots reserved so far is not needed here (none inserted yet)
+      return res.status(400).json({ success: false, error: couponErr.message });
+    }
+
+    const discountAmount = couponInfo?.discountAmount || 0;
+    const calculatedTotalPrice = Math.max(0, subtotalPrice - discountAmount);
+
+    // Keep the paid / remaining amounts consistent with the discounted total
+    const safeAmountPaid = Math.min(
+      Math.max(parseFloat(amountPaid) || 0, 0),
+      calculatedTotalPrice
+    );
+    const safeRemainingAmount = Math.max(0, calculatedTotalPrice - safeAmountPaid);
 
     // Create a booking instance (not saved yet) so we have an _id
     const booking = new Booking({
@@ -210,8 +236,8 @@ export const createBooking = async (req, res) => {
       }).filter(Boolean),
       sameDayCheckout,
       paymentType,
-      amountPaid: parseFloat(amountPaid) || 0,
-      remainingAmount: parseFloat(remainingAmount) || 0,
+      amountPaid: safeAmountPaid,
+      remainingAmount: safeRemainingAmount,
       paymentStatus: "pending",
       pricing: {
         pricePerPersonNight,
@@ -262,6 +288,10 @@ export const createBooking = async (req, res) => {
         })(),
         accommodationPrice,
         foodPackagePrice,
+        subtotal: subtotalPrice,
+        couponCode: couponInfo?.couponCode || "",
+        discountPercent: couponInfo?.discountPercent || 0,
+        discountAmount,
         totalPrice: calculatedTotalPrice,
         nights: effectiveNights,
         days: effectiveDays
@@ -404,6 +434,10 @@ export const createBooking = async (req, res) => {
       priceBreakdown: {
         accommodation: accommodationPrice,
         food: foodPackagePrice,
+        subtotal: subtotalPrice,
+        couponCode: couponInfo?.couponCode || "",
+        discountPercent: couponInfo?.discountPercent || 0,
+        discountAmount,
         total: calculatedTotalPrice,
         effectiveNights,
         effectiveDays
@@ -576,12 +610,13 @@ export const updateBooking = async (req, res) => {
       withFood,
       foodPackageId,
       dailyFoodSelections,
-      paymentType, 
-      amountPaid, 
+      paymentType,
+      amountPaid,
       remainingAmount,
       pricing,
       sameDayCheckout,
-      ...updateData 
+      couponCode,
+      ...updateData
     } = req.body;
 
     const booking = await Booking.findById(req.params.id).populate("location");
@@ -609,8 +644,27 @@ export const updateBooking = async (req, res) => {
       dailyFoodSelections !== undefined;
 
     let recalculatedData = {};
+    // Discounted final total whenever pricing is re-derived in this request
+    // (either a capacity change or a coupon-only change). Used to keep the
+    // paid / remaining amounts consistent in Step 2.
+    let recalculatedFinalTotal = null;
 
     if (capacityFieldsChanged) {
+      // 1.0 Validate the coupon BEFORE any destructive writes so we can bail
+      //     out cleanly (nothing deleted / recreated) if it is not usable.
+      const preCheckCouponCode =
+        couponCode !== undefined ? couponCode : (booking.pricing?.couponCode || "");
+      try {
+        await resolveCouponForBooking({
+          couponCode: preCheckCouponCode,
+          subtotal: 0,
+          locationId: location._id,
+          checkInDate: checkInDate || booking.checkInDate,
+        });
+      } catch (couponErr) {
+        return res.status(400).json({ success: false, error: couponErr.message });
+      }
+
       // 1.1 Delete all existing pool party bookings linked to this main booking
       await PoolPartyBooking.deleteMany({
         mainBookingId: booking._id,
@@ -731,7 +785,28 @@ export const updateBooking = async (req, res) => {
         }
       }
 
-      const calculatedTotalPrice = accommodationPrice + foodPackagePrice;
+      const subtotalPrice = accommodationPrice + foodPackagePrice;
+
+      // ---------- DISCOUNT COUPON ----------
+      // Keep the existing coupon unless the request explicitly sends one
+      // (send "" to remove it). Coupons never stack on an active Offer.
+      const effectiveCouponCode =
+        couponCode !== undefined ? couponCode : (booking.pricing?.couponCode || "");
+
+      let couponInfo = null;
+      try {
+        couponInfo = await resolveCouponForBooking({
+          couponCode: effectiveCouponCode,
+          subtotal: subtotalPrice,
+          offerActive: !!activeOffer,
+        });
+      } catch (couponErr) {
+        return res.status(400).json({ success: false, error: couponErr.message });
+      }
+
+      const discountAmount = couponInfo?.discountAmount || 0;
+      const calculatedTotalPrice = Math.max(0, subtotalPrice - discountAmount);
+      recalculatedFinalTotal = calculatedTotalPrice;
       // ---------- END PRICE RECALCULATION ----------
 
       // 1.3 Now create new pool party bookings (only if location has pool party)
@@ -863,6 +938,10 @@ export const updateBooking = async (req, res) => {
           } : null,
           accommodationPrice,
           foodPackagePrice,
+          subtotal: subtotalPrice,
+          couponCode: couponInfo?.couponCode || "",
+          discountPercent: couponInfo?.discountPercent || 0,
+          discountAmount,
           totalPrice: calculatedTotalPrice,
           nights: effectiveNights,
           days: effectiveDays
@@ -871,16 +950,65 @@ export const updateBooking = async (req, res) => {
     }
 
     // -----------------------------------------------------------------
+    // Step 1b: Coupon-only change (dates / guests / food untouched)
+    // -----------------------------------------------------------------
+    if (!capacityFieldsChanged && couponCode !== undefined) {
+      const existingSubtotal =
+        booking.pricing?.subtotal ||
+        ((booking.pricing?.totalPrice || 0) + (booking.pricing?.discountAmount || 0));
+
+      let couponInfo = null;
+      try {
+        couponInfo = await resolveCouponForBooking({
+          couponCode,
+          subtotal: existingSubtotal,
+          locationId: location._id,
+          checkInDate: booking.checkInDate,
+        });
+      } catch (couponErr) {
+        return res.status(400).json({ success: false, error: couponErr.message });
+      }
+
+      const discountAmount = couponInfo?.discountAmount || 0;
+      const finalTotal = Math.max(0, existingSubtotal - discountAmount);
+      recalculatedFinalTotal = finalTotal;
+
+      const currentPricing = booking.pricing?.toObject
+        ? booking.pricing.toObject()
+        : { ...(booking.pricing || {}) };
+
+      recalculatedData = {
+        pricing: {
+          ...currentPricing,
+          subtotal: existingSubtotal,
+          couponCode: couponInfo?.couponCode || "",
+          discountPercent: couponInfo?.discountPercent || 0,
+          discountAmount,
+          totalPrice: finalTotal,
+        },
+      };
+    }
+
+    // -----------------------------------------------------------------
     // Step 2: Handle payment updates (existing logic)
     // -----------------------------------------------------------------
     let paymentUpdateData = {};
-    if (amountPaid !== undefined || remainingAmount !== undefined || paymentType) {
+    if (amountPaid !== undefined || remainingAmount !== undefined || paymentType || recalculatedFinalTotal !== null) {
       const newAmountPaid = amountPaid !== undefined ? parseFloat(amountPaid) : booking.amountPaid;
-      const newRemainingAmount = remainingAmount !== undefined ? parseFloat(remainingAmount) : booking.remainingAmount;
+
+      // When pricing was re-derived (capacity or coupon change), the remaining
+      // amount must follow the new discounted total rather than a client value.
+      let newRemainingAmount;
+      if (recalculatedFinalTotal !== null) {
+        newRemainingAmount = Math.max(0, recalculatedFinalTotal - newAmountPaid);
+      } else {
+        newRemainingAmount = remainingAmount !== undefined ? parseFloat(remainingAmount) : booking.remainingAmount;
+      }
+
       const newPaymentType = paymentType || booking.paymentType;
-      
+
       let paymentStatus = booking.paymentStatus;
-      
+
       if (newAmountPaid > 0 && newRemainingAmount > 0) {
         paymentStatus = 'partially_paid';
       } else if (newRemainingAmount === 0 && newAmountPaid > 0) {
@@ -888,11 +1016,11 @@ export const updateBooking = async (req, res) => {
       } else if (newAmountPaid === 0) {
         paymentStatus = 'pending';
       }
-      
+
       paymentUpdateData = {
         ...(paymentType && { paymentType: newPaymentType }),
         ...(amountPaid !== undefined && { amountPaid: newAmountPaid }),
-        ...(remainingAmount !== undefined && { remainingAmount: newRemainingAmount }),
+        ...((remainingAmount !== undefined || recalculatedFinalTotal !== null) && { remainingAmount: newRemainingAmount }),
         paymentStatus
       };
     }
