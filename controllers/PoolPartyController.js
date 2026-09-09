@@ -3,6 +3,7 @@ import PoolParty from "../models/poolParty.js";
 import PoolPartyBooking from "../models/PoolPartyBooking.js";
 import Location from "../models/Location.js";
 import Offer from "../models/Offer.js";
+import { resolveCouponForBooking } from "../utils/couponUtils.js";
 
 export const createPoolParty = async (req, res) => {
   try {
@@ -539,7 +540,8 @@ export const createPoolPartyBooking = async (req, res) => {
       remainingAmount = 0,
       withFood = false,
       foodPackage, // This should be an object now, not just a string
-      pricing = {}
+      pricing = {},
+      couponCode = ''
     } = req.body;
     
     console.log('Creating pool party booking with data:', {
@@ -652,8 +654,28 @@ export const createPoolPartyBooking = async (req, res) => {
       }
     }
     
-    const totalPrice = basePrice + foodPackagePrice;
-    
+    const subtotalPrice = basePrice + foodPackagePrice;
+
+    // ========== DISCOUNT COUPON ==========
+    // Coupons never stack on top of an active Offer.
+    let couponInfo = null;
+    try {
+      couponInfo = await resolveCouponForBooking({
+        couponCode,
+        subtotal: subtotalPrice,
+        offerActive: !!activeOffer,
+      });
+    } catch (couponErr) {
+      return res.status(400).json({ success: false, error: couponErr.message });
+    }
+
+    const discountAmount = couponInfo?.discountAmount || 0;
+    const totalPrice = Math.max(0, subtotalPrice - discountAmount);
+
+    // Keep paid / remaining consistent with the discounted total
+    const safeAmountPaid = Math.min(Math.max(parseFloat(amountPaid) || 0, 0), totalPrice);
+    const safeRemainingAmount = Math.max(0, totalPrice - safeAmountPaid);
+
     // Create booking with enhanced data
     const booking = new PoolPartyBooking({
       poolPartyId,
@@ -670,12 +692,16 @@ export const createPoolPartyBooking = async (req, res) => {
       pricing: {
         pricePerAdult: sessionConfig.pricing.perAdult,
         pricePerKid: sessionConfig.pricing.perKid,
-        totalPrice: totalPrice,
-        foodPackagePrice: foodPackagePrice
+        foodPackagePrice: foodPackagePrice,
+        subtotal: subtotalPrice,
+        couponCode: couponInfo?.couponCode || '',
+        discountPercent: couponInfo?.discountPercent || 0,
+        discountAmount: discountAmount,
+        totalPrice: totalPrice
       },
       paymentType,
-      amountPaid: parseFloat(amountPaid),
-      remainingAmount: parseFloat(remainingAmount),
+      amountPaid: safeAmountPaid,
+      remainingAmount: safeRemainingAmount,
       paymentStatus: 'pending',
       withFood,
       foodPackage: foodPackageData,
@@ -909,25 +935,104 @@ export const updatePoolPartyBooking = async (req, res) => {
       // Recalculate pricing if guest counts or session changed
       if (updateData.adults !== undefined || updateData.kids !== undefined || updateData.session !== undefined) {
         const sessionPricing = sessionConfig.pricing;
-        const totalPrice = (sessionPricing.perAdult * newAdults) + (sessionPricing.perKid * newKids);
-        
-        // Update pricing in updateData
+        const sessionTotal = (sessionPricing.perAdult * newAdults) + (sessionPricing.perKid * newKids);
+
+        // Preserve the food-package charge (client sends it in pricing; fall back to stored value)
+        const foodPackagePrice =
+          updateData.pricing?.foodPackagePrice ??
+          booking.pricing?.foodPackagePrice ??
+          0;
+
+        const subtotalPP = sessionTotal + foodPackagePrice;
+
+        // Discount coupon – keep the existing one unless the request sends a new
+        // value ("" removes it). Coupons never stack on an active Offer.
+        const effectiveCouponCode =
+          updateData.couponCode !== undefined
+            ? updateData.couponCode
+            : (booking.pricing?.couponCode || '');
+
+        let ppCoupon = null;
+        try {
+          ppCoupon = await resolveCouponForBooking({
+            couponCode: effectiveCouponCode,
+            subtotal: subtotalPP,
+            poolPartyId: poolParty._id,
+            checkInDate: newDate,
+          });
+        } catch (couponErr) {
+          return res.status(400).json({ success: false, error: couponErr.message });
+        }
+
+        const ppDiscount = ppCoupon?.discountAmount || 0;
+        const finalTotal = Math.max(0, subtotalPP - ppDiscount);
+
         updateData.pricing = {
           pricePerAdult: sessionPricing.perAdult,
           pricePerKid: sessionPricing.perKid,
-          totalPrice: totalPrice
+          foodPackagePrice,
+          subtotal: subtotalPP,
+          couponCode: ppCoupon?.couponCode || '',
+          discountPercent: ppCoupon?.discountPercent || 0,
+          discountAmount: ppDiscount,
+          totalPrice: finalTotal
         };
         updateData.totalGuests = newTotalGuests;
 
-        // Adjust payment amounts if needed (optional)
-        // For simplicity, we keep existing amountPaid and recalculate remainingAmount
-        if (updateData.amountPaid === undefined) {
-          // keep existing amountPaid, but ensure remainingAmount is correct
-          const existingPaid = booking.amountPaid || 0;
-          updateData.remainingAmount = Math.max(0, totalPrice - existingPaid);
-        }
+        // Keep paid / remaining consistent with the new discounted total
+        const paidNow =
+          updateData.amountPaid !== undefined
+            ? parseFloat(updateData.amountPaid) || 0
+            : (booking.amountPaid || 0);
+        updateData.remainingAmount = Math.max(0, finalTotal - paidNow);
       }
     }
+
+    // -----------------------------------------------------------------
+    // Coupon-only change (guest count / session / date untouched)
+    // -----------------------------------------------------------------
+    if (!capacityChanged && updateData.couponCode !== undefined) {
+      const existingSubtotal =
+        booking.pricing?.subtotal ||
+        ((booking.pricing?.totalPrice || 0) + (booking.pricing?.discountAmount || 0));
+
+      let ppCoupon = null;
+      try {
+        ppCoupon = await resolveCouponForBooking({
+          couponCode: updateData.couponCode,
+          subtotal: existingSubtotal,
+          poolPartyId: poolParty._id,
+          checkInDate: booking.bookingDate,
+        });
+      } catch (couponErr) {
+        return res.status(400).json({ success: false, error: couponErr.message });
+      }
+
+      const ppDiscount = ppCoupon?.discountAmount || 0;
+      const finalTotal = Math.max(0, existingSubtotal - ppDiscount);
+
+      const currentPricing = booking.pricing?.toObject
+        ? booking.pricing.toObject()
+        : { ...(booking.pricing || {}) };
+
+      updateData.pricing = {
+        ...currentPricing,
+        subtotal: existingSubtotal,
+        couponCode: ppCoupon?.couponCode || '',
+        discountPercent: ppCoupon?.discountPercent || 0,
+        discountAmount: ppDiscount,
+        totalPrice: finalTotal
+      };
+
+      const paidNow =
+        updateData.amountPaid !== undefined
+          ? parseFloat(updateData.amountPaid) || 0
+          : (booking.amountPaid || 0);
+      updateData.remainingAmount = Math.max(0, finalTotal - paidNow);
+    }
+
+    // `couponCode` is handled via the pricing snapshot, not a top-level field
+    delete updateData.couponCode;
 
     // Apply the update
     const updatedBooking = await PoolPartyBooking.findByIdAndUpdate(

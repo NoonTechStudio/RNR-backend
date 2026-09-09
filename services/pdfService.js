@@ -395,8 +395,12 @@ export const generatePoolPartyBookingPDF = (booking, poolParty) => {
 
       // Calculate logic based on provided schema
       const foodPrice = booking.pricing?.foodPackagePrice || 0;
-      const totalAmount = booking.pricing?.totalPrice || 0;
-      const entryPrice = totalAmount - foodPrice;
+      const totalAmount = booking.pricing?.totalPrice || 0;          // final payable (after discount)
+      const ppDiscountAmount = booking.pricing?.discountAmount || 0;
+      const ppDiscountPercent = booking.pricing?.discountPercent || 0;
+      const ppCouponCode = booking.pricing?.couponCode || '';
+      const ppSubtotal = totalAmount + ppDiscountAmount;             // before discount
+      const entryPrice = ppSubtotal - foodPrice;
 
       const pricingItems = [
         { label: 'Pool Entry Charges', value: formatCurrency(entryPrice) }
@@ -404,6 +408,13 @@ export const generatePoolPartyBookingPDF = (booking, poolParty) => {
 
       if (foodPrice > 0) {
         pricingItems.push({ label: 'Food Package Charges', value: formatCurrency(foodPrice) });
+      }
+
+      if (ppDiscountAmount > 0) {
+        pricingItems.push({
+          label: `Discount (${ppDiscountPercent}% off${ppCouponCode ? ` - ${ppCouponCode}` : ''})`,
+          value: `-${formatCurrency(ppDiscountAmount)}`
+        });
       }
 
       pricingItems.push({ label: 'Total Amount', value: formatCurrency(totalAmount), isBold: true });

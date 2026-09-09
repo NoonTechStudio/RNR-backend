@@ -372,9 +372,12 @@ export const sendPoolPartyConfirmationEmail = async (booking, poolParty, pdfBuff
     // FIX: Compute totalPrice from actual payment fields (same logic as PDF)
     const amountPaid = booking.amountPaid || 0;
     const remainingAmount = booking.remainingAmount || 0;
-    const totalPrice = amountPaid + remainingAmount;
+    const totalPrice = amountPaid + remainingAmount;               // final payable (after discount)
+    const discountAmount = booking.pricing?.discountAmount || 0;
+    const discountPercent = booking.pricing?.discountPercent || 0;
+    const couponCode = booking.pricing?.couponCode || '';
     const foodPrice = booking.pricing?.foodPackagePrice || 0;
-    const entryPrice = totalPrice - foodPrice;
+    const entryPrice = (totalPrice + discountAmount) - foodPrice;
 
     const statusDisplay = {
       paid: '✅ Fully Paid',
@@ -474,6 +477,11 @@ export const sendPoolPartyConfirmationEmail = async (booking, poolParty, pdfBuff
                     <div style="text-align:right; color:#1f2937;">${formatCurrency(foodPrice)}</div>
                     ` : ''}
 
+                    ${discountAmount > 0 ? `
+                    <div><span class="label">Discount (${discountPercent}% off${couponCode ? ` - ${couponCode}` : ''}):</span></div>
+                    <div style="text-align:right; color:#059669;">-${formatCurrency(discountAmount)}</div>
+                    ` : ''}
+
                     <div><span class="label">Total Amount:</span></div>
                     <div style="text-align:right; font-weight:600; color:#1f2937;">${formatCurrency(totalPrice)}</div>
 
@@ -548,9 +556,12 @@ export const sendAdminPoolPartyConfirmation = async (booking, poolParty, adminEm
     // FIX: Compute totalPrice from actual payment fields (same logic as PDF)
     const amountPaid = booking.amountPaid || 0;
     const remainingAmount = booking.remainingAmount || 0;
-    const totalPrice = amountPaid + remainingAmount;
+    const totalPrice = amountPaid + remainingAmount;               // final payable (after discount)
+    const discountAmount = booking.pricing?.discountAmount || 0;
+    const discountPercent = booking.pricing?.discountPercent || 0;
+    const couponCode = booking.pricing?.couponCode || '';
     const foodPrice = booking.pricing?.foodPackagePrice || 0;
-    const entryPrice = totalPrice - foodPrice;
+    const entryPrice = (totalPrice + discountAmount) - foodPrice;
 
     const statusDisplay = {
       paid: '✅ Fully Paid',
@@ -638,6 +649,7 @@ export const sendAdminPoolPartyConfirmation = async (booking, poolParty, adminEm
                 <table>
                     <tr><td class="label">Entry Fee</td><td class="amount" style="text-align:right;">${formatCurrency(entryPrice)}</td></tr>
                     ${foodPrice > 0 ? `<tr><td class="label">Food Package</td><td class="amount" style="text-align:right;">${formatCurrency(foodPrice)}</td></tr>` : ''}
+                    ${discountAmount > 0 ? `<tr><td class="label">Discount (${discountPercent}% off${couponCode ? ` - ${couponCode}` : ''})</td><td class="amount" style="text-align:right; color:#059669;">-${formatCurrency(discountAmount)}</td></tr>` : ''}
                     <tr><td class="label">Total Amount</td><td class="amount" style="text-align:right;">${formatCurrency(totalPrice)}</td></tr>
                     <tr><td class="label">Amount Paid</td><td class="paid" style="text-align:right;">${formatCurrency(amountPaid)}</td></tr>
                     <tr><td class="label">Remaining</td><td class="remaining" style="text-align:right;">${formatCurrency(remainingAmount)}</td></tr>
