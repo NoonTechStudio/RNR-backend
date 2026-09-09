@@ -1,5 +1,5 @@
 import Coupon from "../models/Coupon.js";
-import { getActiveOfferForLocation } from "./offerUtils.js";
+import { getActiveOfferForLocation, getActiveOfferForPoolParty } from "./offerUtils.js";
 
 /**
  * Normalize a raw coupon code the way it is stored (uppercase, trimmed).
@@ -38,7 +38,8 @@ export const computeDiscountAmount = (subtotal, discountPercent) => {
  *
  * `offerActive` can be passed directly when the caller already knows whether an
  * Offer applies (avoids a second DB lookup). Otherwise it is derived from
- * locationId + checkInDate.
+ * locationId + checkInDate (room bookings) or poolPartyId + checkInDate
+ * (pool party bookings).
  *
  * Returns { couponCode, discountPercent, discountAmount } or null.
  * Throws an Error (with a user-facing message) when the code is not usable.
@@ -47,6 +48,7 @@ export const resolveCouponForBooking = async ({
   couponCode,
   subtotal,
   locationId,
+  poolPartyId,
   checkInDate,
   offerActive,
 }) => {
@@ -54,9 +56,14 @@ export const resolveCouponForBooking = async ({
   if (!normalized) return null;
 
   let hasActiveOffer = offerActive;
-  if (hasActiveOffer === undefined && locationId && checkInDate) {
-    const offer = await getActiveOfferForLocation(locationId, checkInDate);
-    hasActiveOffer = !!offer;
+  if (hasActiveOffer === undefined && checkInDate) {
+    if (poolPartyId) {
+      const offer = await getActiveOfferForPoolParty(poolPartyId, checkInDate);
+      hasActiveOffer = !!offer;
+    } else if (locationId) {
+      const offer = await getActiveOfferForLocation(locationId, checkInDate);
+      hasActiveOffer = !!offer;
+    }
   }
 
   if (hasActiveOffer) {

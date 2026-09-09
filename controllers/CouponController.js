@@ -10,7 +10,7 @@ import {
 // ==========================================================================
 export const validateCoupon = async (req, res) => {
   try {
-    const { code, locationId, bookingDate, subtotal } = req.body;
+    const { code, locationId, poolPartyId, bookingDate, subtotal } = req.body;
 
     if (!code) {
       return res.status(400).json({ success: false, error: "Coupon code is required" });
@@ -20,6 +20,7 @@ export const validateCoupon = async (req, res) => {
       couponCode: code,
       subtotal: Number(subtotal) || 0,
       locationId,
+      poolPartyId,
       checkInDate: bookingDate,
     });
 

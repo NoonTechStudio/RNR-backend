@@ -54,9 +54,17 @@ const PoolPartyBookingSchema = new mongoose.Schema({
   pricing: {
     pricePerAdult: { type: Number, required: true },
     pricePerKid: { type: Number, required: true },
-    totalPrice: { type: Number, required: true },
+
     // ✅ ADD: Food package pricing breakdown
-    foodPackagePrice: { type: Number, default: 0 }
+    foodPackagePrice: { type: Number, default: 0 },
+
+    // Discount coupon (snapshot – stays fixed even if the coupon is later changed)
+    subtotal: { type: Number, default: 0 },        // price before any coupon discount
+    couponCode: { type: String, default: "" },
+    discountPercent: { type: Number, default: 0 },
+    discountAmount: { type: Number, default: 0 },
+
+    totalPrice: { type: Number, required: true }   // final payable = subtotal - discountAmount
   },
   
   // Payment type and amounts
