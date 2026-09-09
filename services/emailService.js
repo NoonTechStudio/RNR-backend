@@ -87,6 +87,7 @@ export const sendBookingConfirmationEmail = async (booking, location, pdfBuffer,
 
     const mailOptions = {
       from: fromAddress,
+      replyTo: process.env.ADMIN_EMAIL || 'restmanujsar@gmail.com',
       to: userEmail,
       subject: `🎉 Booking Confirmed - ${location.name} | Rest & Relax`,
       html: `
@@ -383,6 +384,7 @@ export const sendPoolPartyConfirmationEmail = async (booking, poolParty, pdfBuff
 
     const mailOptions = {
       from: fromAddress,
+      replyTo: process.env.ADMIN_EMAIL || 'restmanujsar@gmail.com',
       to: userEmail,
       subject: `🎉 Pool Party Booking Confirmed - ${poolParty.locationName} | Rest & Relax`,
       html: `
@@ -736,6 +738,7 @@ export const sendContactInquiryEmail = async ({ name, email, phone, subject, mes
     if (email) {
       const userMailOptions = {
         from: fromAddress,
+        replyTo: process.env.ADMIN_EMAIL || 'restmanujsar@gmail.com',
         to: email,
         subject: `Thank you for contacting Rest & Relax`,
         html: `
