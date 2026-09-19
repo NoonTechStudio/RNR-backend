@@ -8,10 +8,14 @@ import {
   getBookedDates, // ADD THIS
   updatePaymentStatus,
   getBookingsByPaymentType,
-  getPaymentAnalytics
+  getPaymentAnalytics,
+  getCancellationPreview,
+  cancelBooking
 } from "../controllers/BookingController.js";
 import { generateBookingPDF } from '../services/pdfService.js';
 import Booking from "../models/Booking.js";
+import { authenticateAdmin } from "../middleware/auth.js";
+import { sanitizeInput } from "../middleware/security.js";
 
 
 const router = express.Router();
@@ -25,6 +29,10 @@ router.get("/dates/:locationId", getBookedDates); // ADD THIS ROUTE
 router.patch('/:id/payment-status', updatePaymentStatus);
 router.get('/payment-type/:paymentType', getBookingsByPaymentType);
 router.get('/analytics/payments', getPaymentAnalytics);
+
+// Cancellation & refund (admin only)
+router.get('/:id/cancellation-preview', authenticateAdmin, getCancellationPreview);
+router.post('/:id/cancel', authenticateAdmin, sanitizeInput, cancelBooking);
 
 router.get('/:id/download-pdf', async (req, res) => {
   try {
