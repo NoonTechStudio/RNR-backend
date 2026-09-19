@@ -11,15 +11,17 @@ export const getDashboardStats = async (req, res) => {
     const startOfYear = new Date(today.getFullYear(), 0, 1);
 
     // Get total bookings count
-    const totalBookings = await Booking.countDocuments();
+    const totalBookings = await Booking.countDocuments({ paymentStatus: { $ne: "cancelled" } });
     
     // Get monthly bookings
     const monthlyBookings = await Booking.countDocuments({
+      paymentStatus: { $ne: "cancelled" },
       createdAt: { $gte: startOfMonth }
     });
     
     // Get yearly bookings
     const yearlyBookings = await Booking.countDocuments({
+      paymentStatus: { $ne: "cancelled" },
       createdAt: { $gte: startOfYear }
     });
 
@@ -81,6 +83,7 @@ export const getDashboardStats = async (req, res) => {
     // Calculate occupancy rate (simplified)
     const totalLocations = await Location.countDocuments({ isActive: true });
     const bookedLocations = await Booking.distinct("location", {
+      paymentStatus: { $ne: "cancelled" },
       checkInDate: { $lte: today },
       checkOutDate: { $gte: today }
     });

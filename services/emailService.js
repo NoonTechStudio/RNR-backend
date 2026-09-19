@@ -1,4 +1,5 @@
 import nodemailer from 'nodemailer';
+import { CANCELLATION_TIERS, REFUND_TIMELINE_NOTE } from '../utils/cancellationPolicy.js';
 
 // Helper: get sender address
 const getFromAddress = () => {
@@ -69,6 +70,19 @@ const buildFoodDescription = (booking) => {
   return html;
 };
 
+
+// Helper: cancellation & refund policy card (location bookings)
+const buildCancellationPolicyHtml = () => `
+            <div style="background:#fff7ed; border:1px solid #fed7aa; border-radius:10px; padding:25px; margin-bottom:25px;">
+                <h4 style="margin:0 0 12px 0; color:#9a3412;">🔁 Cancellation & Refund Policy</h4>
+                <p style="margin:0 0 10px 0; color:#7c2d12; font-size:14px;">Refund is calculated on the amount you have paid, based on when you request the cancellation before your check-in date and time:</p>
+                <table style="width:100%; border-collapse:collapse; font-size:14px;">
+                    ${CANCELLATION_TIERS.map(t => `<tr><td style="padding:6px 0; color:#7c2d12; border-bottom:1px solid #fed7aa;">${t.label}</td><td style="padding:6px 0; text-align:right; font-weight:700; color:${t.refundPercent > 0 ? '#166534' : '#b91c1c'}; border-bottom:1px solid #fed7aa;">${t.refundPercent > 0 ? `${t.refundPercent}% refund` : 'No refund'}</td></tr>`).join('')}
+                </table>
+                <p style="margin:12px 0 0 0; color:#7c2d12; font-size:13px;">To cancel, please contact us on +91 90990 48961. ${REFUND_TIMELINE_NOTE}</p>
+            </div>
+`;
+
 // ==================== REGULAR BOOKING – USER EMAIL ====================
 export const sendBookingConfirmationEmail = async (booking, location, pdfBuffer, userEmail) => {
   try {
@@ -81,9 +95,12 @@ export const sendBookingConfirmationEmail = async (booking, location, pdfBuffer,
 
     const amountPaid = booking.amountPaid || 0;
     const remainingAmount = booking.remainingAmount || 0;
-    const totalPrice = amountPaid + remainingAmount;
+    const totalPrice = amountPaid + remainingAmount;               // final payable (after discount)
+    const discountAmount = booking.pricing?.discountAmount || 0;
+    const discountPercent = booking.pricing?.discountPercent || 0;
+    const couponCode = booking.pricing?.couponCode || '';
     const foodPrice = booking.pricing?.foodPackagePrice || 0;
-    const accommodationPrice = totalPrice - foodPrice;
+    const accommodationPrice = (totalPrice + discountAmount) - foodPrice;
 
     const mailOptions = {
       from: fromAddress,
@@ -183,6 +200,11 @@ export const sendBookingConfirmationEmail = async (booking, location, pdfBuffer,
                     <div style="text-align:right; color:#1f2937;">${formatCurrency(foodPrice)}</div>
                     ` : ''}
 
+                    ${discountAmount > 0 ? `
+                    <div><span class="label">Discount (${discountPercent}% off${couponCode ? ` - ${couponCode}` : ''}):</span></div>
+                    <div style="text-align:right; color:#059669;">-${formatCurrency(discountAmount)}</div>
+                    ` : ''}
+
                     <div><span class="label">Total Amount:</span></div>
                     <div style="text-align:right; font-weight:600; color:#1f2937;">${formatCurrency(totalPrice)}</div>
 
@@ -208,6 +230,8 @@ export const sendBookingConfirmationEmail = async (booking, location, pdfBuffer,
                 </div>
                 ` : ''}
             </div>
+
+            ${buildCancellationPolicyHtml()}
 
             <div style="background:#f8fafc; border:1px solid #e2e8f0; border-radius:10px; padding:25px; text-align:center;">
                 <h4 style="margin:0 0 15px 0; color:#2E8B57;">📍 Important Information</h4>
@@ -261,9 +285,12 @@ export const sendAdminNotification = async (booking, location) => {
 
     const amountPaid = booking.amountPaid || 0;
     const remainingAmount = booking.remainingAmount || 0;
-    const totalPrice = amountPaid + remainingAmount;
+    const totalPrice = amountPaid + remainingAmount;               // final payable (after discount)
+    const discountAmount = booking.pricing?.discountAmount || 0;
+    const discountPercent = booking.pricing?.discountPercent || 0;
+    const couponCode = booking.pricing?.couponCode || '';
     const foodPrice = booking.pricing?.foodPackagePrice || 0;
-    const accommodationPrice = totalPrice - foodPrice;
+    const accommodationPrice = (totalPrice + discountAmount) - foodPrice;
 
     const mailOptions = {
       from: fromAddress,
@@ -329,6 +356,7 @@ export const sendAdminNotification = async (booking, location) => {
                 <table>
                     <tr><td class="label">Accommodation</td><td class="amount" style="text-align:right;">${formatCurrency(accommodationPrice)}</td></tr>
                     ${foodPrice > 0 ? `<tr><td class="label">Food Package</td><td class="amount" style="text-align:right;">${formatCurrency(foodPrice)}</td></tr>` : ''}
+                    ${discountAmount > 0 ? `<tr><td class="label">Discount (${discountPercent}% off${couponCode ? ` - ${couponCode}` : ''})</td><td class="amount" style="text-align:right; color:#059669;">-${formatCurrency(discountAmount)}</td></tr>` : ''}
                     <tr><td class="label">Total Amount</td><td class="amount" style="text-align:right;">${formatCurrency(totalPrice)}</td></tr>
                     <tr><td class="label">Amount Paid</td><td class="paid" style="text-align:right;">${formatCurrency(amountPaid)}</td></tr>
                     <tr><td class="label">Remaining</td><td class="remaining" style="text-align:right;">${formatCurrency(remainingAmount)}</td></tr>
@@ -372,9 +400,12 @@ export const sendPoolPartyConfirmationEmail = async (booking, poolParty, pdfBuff
 
     const amountPaid = booking.amountPaid || 0;
     const remainingAmount = booking.remainingAmount || 0;
-    const totalPrice = amountPaid + remainingAmount;
+    const totalPrice = amountPaid + remainingAmount;               // final payable (after discount)
+    const discountAmount = booking.pricing?.discountAmount || 0;
+    const discountPercent = booking.pricing?.discountPercent || 0;
+    const couponCode = booking.pricing?.couponCode || '';
     const foodPrice = booking.pricing?.foodPackagePrice || 0;
-    const entryPrice = totalPrice - foodPrice;
+    const entryPrice = (totalPrice + discountAmount) - foodPrice;
 
     const statusDisplay = {
       paid: '✅ Fully Paid',
@@ -474,6 +505,11 @@ export const sendPoolPartyConfirmationEmail = async (booking, poolParty, pdfBuff
                     <div style="text-align:right; color:#1f2937;">${formatCurrency(foodPrice)}</div>
                     ` : ''}
 
+                    ${discountAmount > 0 ? `
+                    <div><span class="label">Discount (${discountPercent}% off${couponCode ? ` - ${couponCode}` : ''}):</span></div>
+                    <div style="text-align:right; color:#059669;">-${formatCurrency(discountAmount)}</div>
+                    ` : ''}
+
                     <div><span class="label">Total Amount:</span></div>
                     <div style="text-align:right; font-weight:600; color:#1f2937;">${formatCurrency(totalPrice)}</div>
 
@@ -548,9 +584,12 @@ export const sendAdminPoolPartyConfirmation = async (booking, poolParty, adminEm
 
     const amountPaid = booking.amountPaid || 0;
     const remainingAmount = booking.remainingAmount || 0;
-    const totalPrice = amountPaid + remainingAmount;
+    const totalPrice = amountPaid + remainingAmount;               // final payable (after discount)
+    const discountAmount = booking.pricing?.discountAmount || 0;
+    const discountPercent = booking.pricing?.discountPercent || 0;
+    const couponCode = booking.pricing?.couponCode || '';
     const foodPrice = booking.pricing?.foodPackagePrice || 0;
-    const entryPrice = totalPrice - foodPrice;
+    const entryPrice = (totalPrice + discountAmount) - foodPrice;
 
     const statusDisplay = {
       paid: '✅ Fully Paid',
@@ -638,6 +677,7 @@ export const sendAdminPoolPartyConfirmation = async (booking, poolParty, adminEm
                 <table>
                     <tr><td class="label">Entry Fee</td><td class="amount" style="text-align:right;">${formatCurrency(entryPrice)}</td></tr>
                     ${foodPrice > 0 ? `<tr><td class="label">Food Package</td><td class="amount" style="text-align:right;">${formatCurrency(foodPrice)}</td></tr>` : ''}
+                    ${discountAmount > 0 ? `<tr><td class="label">Discount (${discountPercent}% off${couponCode ? ` - ${couponCode}` : ''})</td><td class="amount" style="text-align:right; color:#059669;">-${formatCurrency(discountAmount)}</td></tr>` : ''}
                     <tr><td class="label">Total Amount</td><td class="amount" style="text-align:right;">${formatCurrency(totalPrice)}</td></tr>
                     <tr><td class="label">Amount Paid</td><td class="paid" style="text-align:right;">${formatCurrency(amountPaid)}</td></tr>
                     <tr><td class="label">Remaining</td><td class="remaining" style="text-align:right;">${formatCurrency(remainingAmount)}</td></tr>
@@ -777,6 +817,59 @@ export const sendContactInquiryEmail = async ({ name, email, phone, subject, mes
     return true;
   } catch (error) {
     console.error('❌ Contact inquiry email failed:', error);
+    throw error;
+  }
+};
+
+
+// ==================== REGULAR BOOKING – CANCELLATION EMAIL (GUEST) ====================
+export const sendBookingCancellationEmail = async (booking, location) => {
+  try {
+    if (!booking?.email) return;
+    const transporter = createTransporter();
+    const fromAddress = getFromAddress();
+    const c = booking.cancellation || {};
+    const refundAmount = c.refundAmount || 0;
+    const locationName = location?.name || booking.locationSnapshot?.name || 'your booking';
+
+    const refundNote = refundAmount > 0
+      ? `Your refund of <strong>${formatCurrency(refundAmount)}</strong> (${c.refundPercent}% of the ${formatCurrency(c.paidAmount)} paid) is being processed. ${REFUND_TIMELINE_NOTE}`
+      : 'As per our cancellation policy, no refund is applicable for this cancellation.';
+
+    await transporter.sendMail({
+      from: fromAddress,
+      replyTo: process.env.ADMIN_EMAIL || 'restmanujsar@gmail.com',
+      to: booking.email,
+      subject: `Booking Cancelled - ${locationName} | Rest & Relax`,
+      html: `
+<!DOCTYPE html>
+<html>
+<head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"></head>
+<body style="margin:0; padding:0; font-family:'Segoe UI',Arial,sans-serif; background:#f8fafc;">
+  <div style="max-width:600px; margin:0 auto; background:white; border-radius:12px; overflow:hidden; box-shadow:0 10px 25px rgba(0,0,0,0.1);">
+    <div style="background:#b91c1c; padding:30px; text-align:center; color:white;">
+      <h1 style="margin:0; font-size:28px;">Rest & Relax</h1>
+      <p style="margin:8px 0 0 0;">Booking Cancelled</p>
+    </div>
+    <div style="padding:30px;">
+      <p style="color:#374151;">Dear ${booking.name},</p>
+      <p style="color:#374151;">Your booking <strong>#${booking._id}</strong> at <strong>${locationName}</strong> for check-in on <strong>${formatLongDate(booking.checkInDate)}</strong> has been cancelled.</p>
+      <table style="width:100%; border-collapse:collapse; margin:20px 0; font-size:14px;">
+        <tr><td style="padding:8px 0; border-bottom:1px solid #e5e7eb; color:#374151;">Amount paid</td><td style="padding:8px 0; border-bottom:1px solid #e5e7eb; text-align:right;">${formatCurrency(c.paidAmount)}</td></tr>
+        <tr><td style="padding:8px 0; border-bottom:1px solid #e5e7eb; color:#374151;">Refund (${c.refundPercent || 0}%)</td><td style="padding:8px 0; border-bottom:1px solid #e5e7eb; text-align:right; color:#166534; font-weight:700;">${formatCurrency(refundAmount)}</td></tr>
+        <tr><td style="padding:8px 0; color:#374151;">Amount retained</td><td style="padding:8px 0; text-align:right;">${formatCurrency(c.retainedAmount)}</td></tr>
+      </table>
+      <p style="color:#374151;">${refundNote}</p>
+      ${buildCancellationPolicyHtml()}
+      <p style="color:#6b7280; font-size:13px;">Questions? Call +91 90990 48961 or reply to this email.</p>
+    </div>
+  </div>
+</body>
+</html>`
+    });
+    console.log('✅ Cancellation email sent to guest:', booking.email);
+  } catch (error) {
+    console.error('❌ Cancellation email failed:', error);
     throw error;
   }
 };

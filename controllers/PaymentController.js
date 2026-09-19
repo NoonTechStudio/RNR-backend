@@ -35,6 +35,13 @@ export const createOrder = async (req, res) => {
 
     console.log('📋 Booking found:', booking._id, booking.paymentStatus);
 
+    if (booking.paymentStatus === 'cancelled') {
+      return res.status(400).json({
+        success: false,
+        error: 'This booking has been cancelled'
+      });
+    }
+
     if (booking.paymentStatus === 'paid') {
       return res.status(400).json({
         success: false,
@@ -485,6 +492,13 @@ export const processAdminPayment = async (req, res) => {
       });
     }
 
+    if (booking.paymentStatus === 'cancelled') {
+      return res.status(400).json({
+        success: false,
+        error: 'This booking has been cancelled'
+      });
+    }
+
     // Check if booking is already paid
     if (booking.paymentStatus === 'paid') {
       return res.status(400).json({
@@ -565,6 +579,13 @@ export const markAsPaid = async (req, res) => {
       return res.status(404).json({
         success: false,
         error: 'Booking not found'
+      });
+    }
+
+    if (booking.paymentStatus === 'cancelled') {
+      return res.status(400).json({
+        success: false,
+        error: 'This booking has been cancelled'
       });
     }
 

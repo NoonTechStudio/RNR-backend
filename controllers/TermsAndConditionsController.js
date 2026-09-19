@@ -2,6 +2,39 @@
 import TermsAndConditions from "../models/TermsAndConditions.js";
 import Location from "../models/Location.js";
 import PoolParty from "../models/poolParty.js";
+import {
+  CANCELLATION_TERM_TITLE,
+  getCancellationTermDescription
+} from "../utils/cancellationPolicy.js";
+
+// Location terms must always carry the current cancellation & refund policy.
+// Any older cancellation/refund point (matched by title) is replaced in place so
+// customers never see two conflicting policies; if none exists it is appended.
+const withCancellationPolicy = (termsDoc) => {
+  const obj = termsDoc.toObject ? termsDoc.toObject() : { ...termsDoc };
+  const policyPoint = {
+    title: CANCELLATION_TERM_TITLE,
+    description: getCancellationTermDescription(),
+    isActive: true
+  };
+
+  const points = [];
+  let policyPlaced = false;
+  for (const point of obj.terms || []) {
+    if (/cancel|refund/i.test(point.title || "")) {
+      if (!policyPlaced) {
+        points.push(policyPoint);
+        policyPlaced = true;
+      }
+      continue; // drop the stale wording
+    }
+    points.push(point);
+  }
+  if (!policyPlaced) points.push(policyPoint);
+
+  obj.terms = points.map((point, index) => ({ ...point, pointNumber: index + 1 }));
+  return obj;
+};
 
 // Create Terms and Conditions
 export const createTerms = async (req, res) => {
@@ -363,7 +396,7 @@ export const getActiveTermsForItem = async (req, res) => {
 
     res.json({
       success: true,
-      data: terms[0]
+      data: type === "location" ? withCancellationPolicy(terms[0]) : terms[0]
     });
 
   } catch (err) {

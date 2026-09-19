@@ -104,8 +104,35 @@ const BookingSchema = new mongoose.Schema({
 
   paymentStatus: { 
     type: String, 
-    enum: ["pending", "partially_paid", "paid", "failed"], 
+    enum: ["pending", "partially_paid", "paid", "failed", "cancelled"], 
     default: "pending" 
+  },
+
+  // Cancellation & refund details (only present once a booking is cancelled)
+  cancellation: {
+    cancelledAt: { type: Date },
+    cancelledBy: { type: mongoose.Schema.Types.ObjectId, ref: 'Admin' },
+    reason: { type: String },
+    hoursBeforeCheckIn: { type: Number },
+    refundPercent: { type: Number },
+    paidAmount: { type: Number },      // amount collected at time of cancellation
+    refundAmount: { type: Number },    // amount to be returned as per policy
+    retainedAmount: { type: Number },  // amount kept as per policy
+    refundStatus: {
+      type: String,
+      enum: ['in_progress', 'not_applicable', 'processed', 'pending_manual'],
+    },
+    refundedOnline: { type: Number },
+    manualRefundDue: { type: Number },
+    razorpayRefunds: {
+      type: [{
+        refundId: String,
+        paymentId: String,
+        amount: Number,
+        status: String,
+      }],
+      default: undefined, // keep new (non-cancelled) bookings free of empty arrays
+    },
   },
   
   razorpayOrderId: { type: String },

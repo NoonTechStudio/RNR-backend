@@ -78,10 +78,10 @@ export const createCoupon = async (req, res) => {
     }
 
     const pct = Number(discountPercent);
-    if (Number.isNaN(pct) || pct < 1 || pct > 100) {
+    if (Number.isNaN(pct) || pct <= 0 || pct > 100) {
       return res.status(400).json({
         success: false,
-        error: "discountPercent must be between 1 and 100",
+        error: "discountPercent must be greater than 0 and at most 100",
       });
     }
 
@@ -93,7 +93,7 @@ export const createCoupon = async (req, res) => {
 
     const coupon = new Coupon({
       code: normalized,
-      discountPercent: pct,
+      discountPercent: Math.round(pct * 100) / 100,
       description: description || "",
       isActive: isActive !== undefined ? !!isActive : true,
       createdBy: req.admin?._id,
@@ -129,13 +129,13 @@ export const updateCoupon = async (req, res) => {
 
     if (discountPercent !== undefined) {
       const pct = Number(discountPercent);
-      if (Number.isNaN(pct) || pct < 1 || pct > 100) {
+      if (Number.isNaN(pct) || pct <= 0 || pct > 100) {
         return res.status(400).json({
           success: false,
-          error: "discountPercent must be between 1 and 100",
+          error: "discountPercent must be greater than 0 and at most 100",
         });
       }
-      coupon.discountPercent = pct;
+      coupon.discountPercent = Math.round(pct * 100) / 100;
     }
 
     if (description !== undefined) coupon.description = description;

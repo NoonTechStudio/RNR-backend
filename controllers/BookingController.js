@@ -5,6 +5,8 @@ import PoolPartyBooking from "../models/PoolPartyBooking.js";
 import Offer from "../models/Offer.js";
 import BookedSlot from "../models/BookedSlot.js";
 import { resolveCouponForBooking } from "../utils/couponUtils.js";
+import { getRefundQuote, cancelBookingWithRefund } from "../services/cancellationService.js";
+import { sendBookingCancellationEmail } from "../services/emailService.js";
 
 export const createBooking = async (req, res) => {
   try {
@@ -627,6 +629,13 @@ export const updateBooking = async (req, res) => {
       });
     }
 
+    if (booking.paymentStatus === 'cancelled') {
+      return res.status(400).json({
+        success: false,
+        error: "This booking has been cancelled and can no longer be edited"
+      });
+    }
+
     const location = booking.location;
 
     // -----------------------------------------------------------------
@@ -1080,6 +1089,13 @@ export const updatePaymentStatus = async (req, res) => {
       });
     }
 
+    if (booking.paymentStatus === 'cancelled') {
+      return res.status(400).json({
+        success: false,
+        error: "This booking has been cancelled and its payment status can no longer be changed"
+      });
+    }
+
     const updateData = {};
     
     if (paymentStatus) updateData.paymentStatus = paymentStatus;
@@ -1228,8 +1244,11 @@ export const getPaymentAnalytics = async (req, res) => {
       if (endDate) dateFilter.createdAt.$lte = new Date(endDate);
     }
 
+    // Cancelled bookings are excluded from revenue / collection analytics
+    const analyticsMatch = { ...dateFilter, paymentStatus: { $ne: "cancelled" } };
+
     const analytics = await Booking.aggregate([
-      { $match: dateFilter },
+      { $match: analyticsMatch },
       {
         $group: {
           _id: "$paymentType",
@@ -1249,7 +1268,7 @@ export const getPaymentAnalytics = async (req, res) => {
     ]);
 
     const overall = await Booking.aggregate([
-      { $match: dateFilter },
+      { $match: analyticsMatch },
       {
         $group: {
           _id: null,
@@ -1287,5 +1306,86 @@ export const getPaymentAnalytics = async (req, res) => {
       success: false,
       error: err.message
     });
+  }
+};
+
+// ---------------------------------------------------------------------------
+// CANCELLATION & REFUND (location bookings)
+// ---------------------------------------------------------------------------
+
+// Preview what a cancellation would refund right now (admin)
+export const getCancellationPreview = async (req, res) => {
+  try {
+    const booking = await Booking.findById(req.params.id).populate("location", "name");
+    if (!booking) {
+      return res.status(404).json({ success: false, error: "Booking not found" });
+    }
+    if (booking.paymentStatus === "cancelled") {
+      return res.status(400).json({ success: false, error: "Booking is already cancelled" });
+    }
+
+    const quote = await getRefundQuote(booking);
+
+    res.json({
+      success: true,
+      data: {
+        bookingId: booking._id,
+        guestName: booking.name,
+        locationName: booking.location?.name || booking.locationSnapshot?.name,
+        checkInDate: booking.checkInDate,
+        checkInTime: booking.checkInTime,
+        paymentStatus: booking.paymentStatus,
+        totalPrice: booking.pricing?.totalPrice || 0,
+        ...quote,
+      },
+    });
+  } catch (err) {
+    console.error("Cancellation preview error:", err);
+    res.status(500).json({ success: false, error: err.message });
+  }
+};
+
+// Cancel a booking and refund per the policy (admin)
+export const cancelBooking = async (req, res) => {
+  try {
+    const { reason = "", processOnlineRefund = true } = req.body || {};
+
+    const result = await cancelBookingWithRefund({
+      bookingId: req.params.id,
+      adminId: req.admin?._id,
+      reason: String(reason).trim(),
+      processOnlineRefund: processOnlineRefund !== false,
+    });
+
+    // Let the guest know (never blocks the response)
+    try {
+      if (result.booking?.email) {
+        await sendBookingCancellationEmail(result.booking, result.booking.location);
+      }
+    } catch (mailErr) {
+      console.error("Cancellation email failed:", mailErr);
+    }
+
+    res.json({
+      success: true,
+      message: "Booking cancelled successfully",
+      booking: result.booking,
+      refund: {
+        refundPercent: result.quote.refundPercent,
+        tierLabel: result.quote.tierLabel,
+        paidAmount: result.quote.paidAmount,
+        refundAmount: result.quote.refundAmount,
+        retainedAmount: result.quote.retainedAmount,
+        refundedOnline: result.refundedOnline,
+        manualRefundDue: result.manualRefundDue,
+        refundStatus: result.refundStatus,
+        warning: result.onlineError
+          ? `Part of the online refund failed (${result.onlineError}). Please refund the balance manually.`
+          : undefined,
+      },
+    });
+  } catch (err) {
+    console.error("Cancel booking error:", err);
+    res.status(err.statusCode || 500).json({ success: false, error: err.message });
   }
 };
